@@ -1,0 +1,599 @@
+I'll help you design the Laptop Sales Management System starting with the high-level architecture and then break down each component.
+
+### 1. High-Level Architecture Diagram (ASCII)
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Client Applications                            │
+│  (Web Browser, Mobile Apps, Third-party Integration)                 │
+└─────────────────────────────────┬────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        API Gateway Layer                             │
+│  (Load Balancing, Authentication, Rate Limiting, SSL Termination)    │
+└─────────────────────────────────┬────────────────────────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     Application Services Layer                        │
+├────────────┬────────────┬────────────┬────────────┬─────────────────┤
+│   User     │ Inventory  │   Sales    │  Customer  │    Supplier     │
+│  Service   │  Service   │  Service   │  Service   │    Service      │
+└────────────┴────────────┴────────────┴────────────┴─────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Integration Layer                              │
+├────────────┬────────────┬────────────┬────────────┬─────────────────┤
+│  Payment   │   Email    │    SMS     │  Report    │     Audit       │
+│  Gateway   │  Service   │  Service   │ Generator  │    Service      │
+└────────────┴────────────┴────────────┴────────────┴─────────────────┘
+                                  │
+                                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Data Layer                                     │
+├────────────┬────────────┬────────────┬────────────┬─────────────────┤
+│PostgreSQL  │   Redis    │  Elastic   │  S3/File   │    Message      │
+│ Database   │   Cache    │  Search    │  Storage   │    Queue        │
+└────────────┴────────────┴────────────┴────────────┴─────────────────┘
+```
+
+### 2. Component Breakdown with Responsibilities
+
+1. **API Gateway Layer**
+   - Request routing and load balancing
+   - Authentication and authorization
+   - Rate limiting and throttling
+   - SSL/TLS termination
+   - API documentation (Swagger)
+   - Request/Response logging
+
+2. **Application Services Layer**
+   - User Service:
+     - User authentication and authorization
+     - Role management
+     - Profile management
+   
+   - Inventory Service:
+     - Laptop inventory management
+     - Stock level tracking
+     - Product categorization
+     - Price management
+   
+   - Sales Service:
+     - Order processing
+     - Invoice generation
+     - Payment processing
+     - Discount management
+   
+   - Customer Service:
+     - Customer profile management
+     - Purchase history tracking
+     - Feedback management
+     - Warranty tracking
+   
+   - Supplier Service:
+     - Supplier management
+     - Purchase order processing
+     - Invoice management
+     - Returns processing
+
+3. **Integration Layer**
+   - Payment Gateway Integration
+   - Email Service Integration
+   - SMS Notification Service
+   - Report Generation Service
+   - Audit Service
+
+4. **Data Layer**
+   - Primary Database (PostgreSQL)
+   - Caching Layer (Redis)
+   - Search Engine (Elasticsearch)
+   - File Storage (S3/Local)
+   - Message Queue (RabbitMQ/Kafka)
+
+### 3. Database Schema Design (Core Tables)
+
+```sql
+-- User Management
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Product Management
+CREATE TABLE products (
+    id BIGSERIAL PRIMARY KEY,
+    model_name VARCHAR(100) NOT NULL,
+    brand_id BIGINT REFERENCES brands(id),
+    category_id BIGINT REFERENCES categories(id),
+    serial_number VARCHAR(50) UNIQUE,
+    specifications JSONB,
+    purchase_price DECIMAL(10,2),
+    selling_price DECIMAL(10,2),
+    stock_level INTEGER,
+    low_stock_threshold INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Customer Management
+CREATE TABLE customers (
+    id BIGSERIAL PRIMARY KEY,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    email VARCHAR(100) UNIQUE,
+    phone VARCHAR(20),
+    address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sales Management
+CREATE TABLE sales_orders (
+    id BIGSERIAL PRIMARY KEY,
+    customer_id BIGINT REFERENCES customers(id),
+    order_number VARCHAR(50) UNIQUE,
+    order_date TIMESTAMP,
+    total_amount DECIMAL(10,2),
+    tax_amount DECIMAL(10,2),
+    discount_amount DECIMAL(10,2),
+    status VARCHAR(20),
+    payment_method VARCHAR(20),
+    created_by BIGINT REFERENCES users(id)
+);
+
+-- Supplier Management
+CREATE TABLE suppliers (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    contact_person VARCHAR(100),
+    email VARCHAR(100),
+    phone VARCHAR(20),
+    address TEXT,
+    status VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 4. API Endpoint Structure
+
+```
+/api/v1
+├── /auth
+│   ├── POST /login
+│   ├── POST /register
+│   └── POST /reset-password
+├── /users
+│   ├── GET /
+│   ├── GET /{id}
+│   ├── PUT /{id}
+│   └── DELETE /{id}
+├── /products
+│   ├── GET /
+│   ├── POST /
+│   ├── GET /{id}
+│   ├── PUT /{id}
+│   └── DELETE /{id}
+├── /sales
+│   ├── POST /orders
+│   ├── GET /orders
+│   ├── GET /orders/{id}
+│   └── PUT /orders/{id}
+├── /customers
+│   ├── GET /
+│   ├── POST /
+│   ├── GET /{id}
+│   └── PUT /{id}
+└── /suppliers
+    ├── GET /
+    ├── POST /
+    ├── GET /{id}
+    └── PUT /{id}
+```
+
+### 5. Technology Stack Recommendations (Java)
+
+1. **Core Framework**
+   - Spring Boot 3.x
+   - Spring Security
+   - Spring Data JPA
+   - Spring Cloud for microservices
+
+2. **Database**
+   - PostgreSQL
+   - Redis for caching
+   - Elasticsearch for search
+   - Flyway for database migrations
+
+3. **API Documentation**
+   - SpringDoc OpenAPI (Swagger)
+
+4. **Security**
+   - JWT for authentication
+   - Spring Security
+   - Bcrypt for password hashing
+
+5. **Testing**
+   - JUnit 5
+   - Mockito
+   - TestContainers
+
+6. **Monitoring & Logging**
+   - Spring Actuator
+   - Micrometer
+   - SLF4J with Logback
+   - Prometheus & Grafana
+
+7. **Build & Deployment**
+   - Maven
+   - Docker
+   - Jenkins/GitHub Actions
+
+8. **Additional Libraries**
+   - Lombok for boilerplate reduction
+   - MapStruct for object mapping
+   - Apache POI for Excel export
+   - iText for PDF generation
+
+
+First, let's create the basic project structure:
+
+```
+laptop-sales-management/
+├── src/
+│   ├── main/
+│   │   ├── java/
+│   │   │   └── com/
+│   │   │       └── laptopsales/
+│   │   │           ├── LaptopSalesApplication.java
+│   │   │           ├── config/
+│   │   │           ├── controller/
+│   │   │           ├── model/
+│   │   │           ├── repository/
+│   │   │           ├── service/
+│   │   │           ├── security/
+│   │   │           ├── exception/
+│   │   │           └── util/
+│   │   └── resources/
+│   │       ├── application.yml
+│   │       └── db/
+│   │           └── migration/
+└── pom.xml
+```
+
+Let's start with the implementation:
+
+1. First, let's create the `pom.xml` with necessary dependencies:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.1.0</version>
+    </parent>
+
+    <groupId>com.laptopsales</groupId>
+    <artifactId>laptop-sales-management</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <java.version>17</java.version>
+        <jwt.version>0.11.5</jwt.version>
+    </properties>
+
+    <dependencies>
+        <!-- Spring Boot Starters -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Database -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+
+        <!-- Security -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jwt.version}</version>
+        </dependency>
+
+        <!-- Utilities -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+```
+
+2. Create the main application class:
+
+```java
+package com.laptopsales;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+
+@SpringBootApplication
+@EnableJpaAuditing
+public class LaptopSalesApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(LaptopSalesApplication.class, args);
+    }
+}
+```
+
+3. Let's implement the core entities starting with User and Role:
+
+```java
+package com.laptopsales.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.time.LocalDateTime;
+import java.util.Set;
+
+@Data
+@Entity
+@Table(name = "users")
+@EntityListeners(AuditingEntityListener.class)
+public class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String username;
+
+    @Column(nullable = false, unique = true)
+    private String email;
+
+    @Column(nullable = false)
+    private String password;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @Enumerated(EnumType.STRING)
+    private Set<Role> roles;
+
+    @Enumerated(EnumType.STRING)
+    private UserStatus status;
+
+    @CreatedDate
+    private LocalDateTime createdAt;
+
+    @LastModifiedDate
+    private LocalDateTime updatedAt;
+}
+
+package com.laptopsales.model;
+
+public enum Role {
+    ROLE_ADMIN,
+    ROLE_SALES_STAFF,
+    ROLE_INVENTORY_MANAGER
+}
+
+package com.laptopsales.model;
+
+public enum UserStatus {
+    ACTIVE,
+    INACTIVE,
+    LOCKED
+}
+```
+
+4. Create the Product entity:
+
+```java
+package com.laptopsales.model;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import org.hibernate.annotations.Type;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Data
+@Entity
+@Table(name = "products")
+public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String modelName;
+
+    @ManyToOne
+    @JoinColumn(name = "brand_id")
+    private Brand brand;
+
+    @ManyToOne
+    @JoinColumn(name = "category_id")
+    private Category category;
+
+    @Column(unique = true)
+    private String serialNumber;
+
+    @Column(columnDefinition = "jsonb")
+    private String specifications;
+
+    private BigDecimal purchasePrice;
+    private BigDecimal sellingPrice;
+    private Integer stockLevel;
+    private Integer lowStockThreshold;
+    private LocalDateTime createdAt;
+}
+```
+
+5. Create the basic security configuration:
+
+```java
+package com.laptopsales.config;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableWebSecurity
+@RequiredArgsConstructor
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .csrf().disable()
+            .sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            .and()
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/v1/auth/**").permitAll()
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+            );
+        
+        return http.build();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+```
+
+6. Create application.yml configuration:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/laptop_sales
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 86400000 # 24 hours
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.laptopsales: DEBUG
+```
+
+7. Create a basic database migration:
+
+```sql
+-- V1__Initial_Schema.sql
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE user_roles (
+    user_id BIGINT REFERENCES users(id),
+    roles VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE products (
+    id BIGSERIAL PRIMARY KEY,
+    model_name VARCHAR(100) NOT NULL,
+    brand_id BIGINT,
+    category_id BIGINT,
+    serial_number VARCHAR(50) UNIQUE,
+    specifications JSONB,
+    purchase_price DECIMAL(10,2),
+    selling_price DECIMAL(10,2),
+    stock_level INTEGER,
+    low_stock_threshold INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+This is the basic setup for the Laptop Sales Management System.
+

@@ -1,0 +1,362 @@
+1. First, let's create the core project structure:
+
+```
+src/
+├── main/
+│   ├── java/
+│   │   └── com/
+│   │       └── laptopsales/
+│   │           ├── config/
+│   │           ├── controller/
+│   │           ├── domain/
+│   │           ├── dto/
+│   │           ├── exception/
+│   │           ├── repository/
+│   │           ├── service/
+│   │           └── util/
+│   └── resources/
+└── test/
+```
+
+2. Let's start with core domain models and interfaces:
+
+```java
+// Domain Models
+package com.laptopsales.domain;
+
+@Entity
+@Table(name = "products")
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class Product {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String modelName;
+    private String brand;
+    
+    @Enumerated(EnumType.STRING)
+    private LaptopCategory category;
+    
+    @Column(columnDefinition = "jsonb")
+    private String specifications;
+    
+    private BigDecimal basePrice;
+    private BigDecimal sellingPrice;
+    
+    @OneToMany(mappedBy = "product")
+    private Set<Inventory> inventories;
+    
+    @Version
+    private Long version;
+}
+
+@Entity
+@Table(name = "stores")
+@Data
+public class Store {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String name;
+    private String location;
+    
+    @OneToMany(mappedBy = "store")
+    private Set<Inventory> inventories;
+    
+    @Embedded
+    private BusinessHours businessHours;
+}
+
+@Entity
+@Table(name = "inventory")
+@Data
+public class Inventory {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    @ManyToOne
+    private Product product;
+    
+    @ManyToOne
+    private Store store;
+    
+    private Integer currentStock;
+    private Integer minimumStock;
+    private Integer maximumStock;
+    
+    @Version
+    private Long version;
+}
+```
+
+3. Service Interfaces and Implementations:
+
+```java
+// Service Interfaces
+package com.laptopsales.service;
+
+public interface InventoryService {
+    /**
+     * Updates stock levels for a product in a specific store
+     * @param storeId Store identifier
+     * @param productId Product identifier
+     * @param quantity Change in quantity (positive for addition, negative for reduction)
+     * @return Updated inventory status
+     * @throws InsufficientStockException if stock becomes negative
+     * @throws StoreNotFoundException if store doesn't exist
+     * @throws ProductNotFoundException if product doesn't exist
+     */
+    InventoryDTO updateStock(Long storeId, Long productId, Integer quantity);
+    
+    /**
+     * Checks if a product is available in the requested quantity
+     * @param storeId Store identifier
+     * @param productId Product identifier
+     * @param quantity Requested quantity
+     * @return true if available, false otherwise
+     */
+    boolean isProductAvailable(Long storeId, Long productId, Integer quantity);
+    
+    /**
+     * Transfers stock between stores
+     * @param fromStoreId Source store
+     * @param toStoreId Destination store
+     * @param productId Product to transfer
+     * @param quantity Quantity to transfer
+     * @return Transfer status
+     */
+    StockTransferDTO transferStock(Long fromStoreId, Long toStoreId, Long productId, Integer quantity);
+}
+
+// Service Implementation
+@Service
+@Transactional
+@Slf4j
+public class InventoryServiceImpl implements InventoryService {
+    private final InventoryRepository inventoryRepository;
+    private final StoreRepository storeRepository;
+    private final ProductRepository productRepository;
+    private final EventPublisher eventPublisher;
+
+    @Autowired
+    public InventoryServiceImpl(
+        InventoryRepository inventoryRepository,
+        StoreRepository storeRepository,
+        ProductRepository productRepository,
+        EventPublisher eventPublisher
+    ) {
+        this.inventoryRepository = inventoryRepository;
+        this.storeRepository = storeRepository;
+        this.productRepository = productRepository;
+        this.eventPublisher = eventPublisher;
+    }
+
+    @Override
+    @Transactional
+    public InventoryDTO updateStock(Long storeId, Long productId, Integer quantity) {
+        try {
+            Inventory inventory = inventoryRepository
+                .findByStoreIdAndProductId(storeId, productId)
+                .orElseThrow(() -> new InventoryNotFoundException("Inventory not found"));
+
+            if (inventory.getCurrentStock() + quantity < 0) {
+                throw new InsufficientStockException("Insufficient stock available");
+            }
+
+            inventory.setCurrentStock(inventory.getCurrentStock() + quantity);
+            
+            if (inventory.getCurrentStock() <= inventory.getMinimumStock()) {
+                eventPublisher.publish(new LowStockEvent(inventory));
+            }
+
+            return InventoryMapper.INSTANCE.toDTO(inventoryRepository.save(inventory));
+        } catch (OptimisticLockingFailureException e) {
+            log.error("Concurrent modification detected", e);
+            throw new ConcurrentModificationException("Stock was modified by another transaction");
+        }
+    }
+}
+```
+
+4. Exception Handling:
+
+```java
+package com.laptopsales.exception;
+
+@ControllerAdvice
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @ExceptionHandler(InsufficientStockException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientStock(InsufficientStockException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.BAD_REQUEST.value(),
+            "INSUFFICIENT_STOCK",
+            ex.getMessage()
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(ConcurrentModificationException.class)
+    public ResponseEntity<ErrorResponse> handleConcurrentModification(ConcurrentModificationException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.CONFLICT.value(),
+            "CONCURRENT_MODIFICATION",
+            "Please retry the operation"
+        );
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+}
+```
+
+5. Configuration:
+
+```java
+package com.laptopsales.config;
+
+@Configuration
+@EnableCaching
+public class ApplicationConfig {
+
+    @Bean
+    public CacheManager cacheManager() {
+        SimpleCacheManager cacheManager = new SimpleCacheManager();
+        cacheManager.setCaches(Arrays.asList(
+            new ConcurrentMapCache("products"),
+            new ConcurrentMapCache("inventory")
+        ));
+        return cacheManager;
+    }
+
+    @Bean
+    public ModelMapper modelMapper() {
+        return new ModelMapper();
+    }
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        return mapper;
+    }
+}
+```
+
+6. Unit Test Structure:
+
+```java
+package com.laptopsales.service;
+
+@ExtendWith(MockitoExtension.class)
+class InventoryServiceTest {
+
+    @Mock
+    private InventoryRepository inventoryRepository;
+
+    @Mock
+    private StoreRepository storeRepository;
+
+    @Mock
+    private ProductRepository productRepository;
+
+    @Mock
+    private EventPublisher eventPublisher;
+
+    @InjectMocks
+    private InventoryServiceImpl inventoryService;
+
+    @Test
+    void updateStock_WithValidData_ShouldUpdateSuccessfully() {
+        // Arrange
+        Long storeId = 1L;
+        Long productId = 1L;
+        Integer quantity = 10;
+        Inventory inventory = createTestInventory();
+        when(inventoryRepository.findByStoreIdAndProductId(storeId, productId))
+            .thenReturn(Optional.of(inventory));
+
+        // Act
+        InventoryDTO result = inventoryService.updateStock(storeId, productId, quantity);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(inventory.getCurrentStock() + quantity, result.getCurrentStock());
+        verify(inventoryRepository).save(any(Inventory.class));
+    }
+
+    @Test
+    void updateStock_WithInsufficientStock_ShouldThrowException() {
+        // Arrange
+        Long storeId = 1L;
+        Long productId = 1L;
+        Integer quantity = -20;
+        Inventory inventory = createTestInventory();
+        when(inventoryRepository.findByStoreIdAndProductId(storeId, productId))
+            .thenReturn(Optional.of(inventory));
+
+        // Act & Assert
+        assertThrows(InsufficientStockException.class, () ->
+            inventoryService.updateStock(storeId, productId, quantity));
+    }
+}
+```
+
+7. API Controllers:
+
+```java
+package com.laptopsales.controller;
+
+@RestController
+@RequestMapping("/api/v1/inventory")
+@Validated
+@Slf4j
+public class InventoryController {
+
+    private final InventoryService inventoryService;
+
+    @Autowired
+    public InventoryController(InventoryService inventoryService) {
+        this.inventoryService = inventoryService;
+    }
+
+    @PutMapping("/{storeId}/products/{productId}/stock")
+    public ResponseEntity<InventoryDTO> updateStock(
+        @PathVariable Long storeId,
+        @PathVariable Long productId,
+        @RequestBody @Valid StockUpdateRequest request
+    ) {
+        log.info("Updating stock for store: {} and product: {}", storeId, productId);
+        InventoryDTO result = inventoryService.updateStock(storeId, productId, request.getQuantity());
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/transfer")
+    public ResponseEntity<StockTransferDTO> transferStock(@RequestBody @Valid StockTransferRequest request) {
+        log.info("Transferring stock between stores: {} -> {}", request.getFromStoreId(), request.getToStoreId());
+        StockTransferDTO result = inventoryService.transferStock(
+            request.getFromStoreId(),
+            request.getToStoreId(),
+            request.getProductId(),
+            request.getQuantity()
+        );
+        return ResponseEntity.ok(result);
+    }
+}
+```
+
+This implementation follows:
+- SOLID principles
+- Dependency Injection
+- Proper error handling
+- Interface-based design
+- Unit testing best practices
+- Concurrency handling
+- Logging
+- Transaction management
+- Event-driven architecture for notifications
