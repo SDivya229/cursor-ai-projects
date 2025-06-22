@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/pre-commit/mirrors-checkstyle
+    rev: v10.12.4
+    hooks:
+      - id: checkstyle
+        args: ["-c", "checkstyle.xml", "src/main/java/"]
+  - repo: https://github.com/diffplug/spotless
+    rev: v6.25.0
+    hooks:
+      - id: spotless-maven
+        name: Run Spotless Maven
+        entry: mvn spotless:apply
+        language: system
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-todos 
