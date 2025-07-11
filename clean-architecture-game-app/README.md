@@ -21,6 +21,8 @@ This project follows Clean Architecture principles with four main layers:
 - **API Layer**: RESTful and WebSocket APIs using Spring Boot
 - **Frontend**: React SPA with modern UI/UX
 
+![Architecture Diagram](architecture.png)
+
 ## 🛠️ Technology Stack
 
 ### Backend
